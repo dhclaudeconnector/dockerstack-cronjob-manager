@@ -1,0 +1,69 @@
+# ================================================================
+#  compose.apps.yml — Application Layer (cronjob-manager)
+#  Builds the monorepo app (backend + frontend) from ./services/app.
+#
+#  Container "main-app" chạy 2 tiến trình:
+#    - backend : Fastify API + RTDB queue consumer (cổng nội bộ BACKEND_PORT)
+#    - frontend: Next.js dashboard (cổng public = APP_PORT), proxy → backend
+#
+#  Subdomain: ${PROJECT_NAME}.${DOMAIN}
+#
+#  Minimal required env:
+#    APP_PORT       — Cổng frontend (public) lắng nghe trong container (3000)
+#    BACKEND_PORT   — Cổng backend nội bộ (8080)
+#    HEALTH_PATH    — /api/health-check (frontend → backend /health)
+#    API_SECRET     — bí mật giữa frontend↔backend (header x-api-secret)
+#    FIREBASE_*     — kết nối Firebase RTDB (service account / auth secret)
+#    PROJECT_NAME, DOMAIN, CADDY_EMAIL, TINYAUTH_*, LITESTREAM_*
+# ================================================================
+
+services:
+  app:
+    container_name: "main-app"
+    image: "${PROJECT_NAME:-myapp}-app:local"
+    build:
+      context: ./services/app
+      dockerfile: Dockerfile
+    # Compose vẫn ưu tiên giá trị khai báo explicit trong environment bên dưới.
+    env_file:
+      - ./.env
+    environment:
+      NODE_ENV: "${NODE_ENV:-production}"
+      PORT: "${APP_PORT:-3000}"
+      BACKEND_PORT: "${BACKEND_PORT:-8080}"
+    ports:
+      - "127.0.0.1:${APP_HOST_PORT:-3000}:${APP_PORT:-3000}"
+    volumes:
+      - ${DOCKER_VOLUMES_ROOT:-./.docker-volumes}/app/logs:/app/logs
+      - ${DOCKER_VOLUMES_ROOT:-./.docker-volumes}/app/data:/app/data
+    labels:
+      # Public HTTP sites behind Cloudflare Tunnel.
+      - "caddy=http://${PROJECT_NAME}.${DOMAIN}, http://main.${DOMAIN}, http://${DOMAIN}, http://${PROJECT_NAME_TAILSCALE}.${TAILSCALE_TAILNET_DOMAIN}"
+      - "caddy.forward_auth=tinyauth:${TINYAUTH_PORT:-3000}"
+      - "caddy.forward_auth.uri=/api/auth/caddy"
+      - "caddy.forward_auth.header_up=X-Forwarded-Proto https"
+      - "caddy.forward_auth.copy_headers=Remote-User Remote-Email Remote-Name Remote-Groups"
+      - "caddy.reverse_proxy={{upstreams ${APP_PORT:-3000}}}"
+      # Internal HTTPS site for Tailscale / trusted LAN access.
+      - "caddy_1=https://${PROJECT_NAME_TAILSCALE:-myapp}.${TAILSCALE_TAILNET_DOMAIN:-tailnet.local}"
+      - "caddy_1.tls=internal"
+      - "caddy_1.forward_auth=tinyauth:${TINYAUTH_PORT:-3000}"
+      - "caddy_1.forward_auth.uri=/api/auth/caddy"
+      - "caddy_1.forward_auth.header_up=X-Forwarded-Proto https"
+      - "caddy_1.forward_auth.copy_headers=Remote-User Remote-Email Remote-Name Remote-Groups"
+      - "caddy_1.reverse_proxy={{upstreams ${APP_PORT:-3000}}}"
+    networks: [app_net]
+    depends_on:
+      tinyauth:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test:
+        - "CMD"
+        - "sh"
+        - "-c"
+        - "wget -qO- http://localhost:${APP_PORT:-3000}${HEALTH_PATH:-/api/health-check} || exit 1"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s

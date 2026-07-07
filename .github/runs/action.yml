@@ -1,0 +1,115 @@
+name: main-yml
+description: main-yml
+runs:
+  using: composite
+  steps:
+    # ── Step 1: Pull .env + credentials from RTDB ─────────────
+    - name: Pull .env & credentials from RTDB
+      shell: bash
+      run: bash .github/scripts/pull-env.sh
+
+    # ── Step 2: Detect OS → append vars to .env ───────────────
+    - name: Detect OS environment
+      shell: bash
+      run: dotenvrtdb -e .env -- bash .github/scripts/detect-os.sh
+
+    # ── Step 3: OS-specific setup ─────────────────────────────
+    - name: Setup environment (Linux)
+      if: runner.os == 'Linux'
+      shell: bash
+      run: dotenvrtdb -e .env -- bash .github/scripts/setup-linux.sh
+
+    - name: Setup environment (Windows)
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: .github/scripts/setup-windows.ps1
+
+    # ── Step 4: Validate config ────────────────────────────────
+    - name: Validate env
+      shell: bash
+      run: dotenvrtdb -e .env -- node docker-compose/scripts/validate-env.js
+
+    # ── Linux: BuildKit gha cache + public-image cache + deploy ─
+    # Build từng service với BuildKit cache (type=gha) qua ci-build.sh,
+    # rồi `compose up --no-build`. Nhanh hơn `up --build` vì tái dùng layer
+    # giữa các lần chạy CI.
+    - name: Expose GitHub Actions runtime (for gha build cache)
+      if: runner.os == 'Linux'
+      uses: crazy-max/ghaction-github-runtime@v3
+
+    - name: Set up Docker Buildx
+      if: runner.os == 'Linux'
+      uses: docker/setup-buildx-action@v3
+
+    - name: Compute weekly image cache key
+      if: runner.os == 'Linux'
+      id: imgkey
+      shell: bash
+      run: echo "week=$(date -u +%G-%V)" >> "$GITHUB_OUTPUT"
+
+    - name: Cache public docker images (save/load tarball)
+      if: runner.os == 'Linux'
+      uses: actions/cache@v4
+      with:
+        path: /tmp/ci-public-images.tar
+        # Key đổi theo TUẦN → tự refresh image công khai mỗi tuần.
+        key: docker-pubimg-v1-${{ steps.imgkey.outputs.week }}
+
+    - name: Build images (cache) & deploy stack (Linux)
+      if: runner.os == 'Linux'
+      shell: bash
+      env:
+        CACHE_TYPE: gha
+        IMAGE_TAR: /tmp/ci-public-images.tar
+      run: dotenvrtdb -e .env -- bash docker-compose/scripts/ci-build.sh
+
+    # ── Windows: giữ nguyên (build qua compose, không cache) ──
+    - name: Build & start services (Windows/WSL2)
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        $wsl = $env:WSL_WORKSPACE
+        wsl -d Ubuntu -- bash -c "cd '$wsl' && bash docker-compose/scripts/dc.sh up -d --build --remove-orphans"
+
+    # ── Cleanup + keepalive ───────────────────────────────────
+    # Chỉ prune image cũ hơn 72h → giữ lại layer gần đây cho cache hit.
+    - name: Clean up old images (Linux)
+      if: runner.os == 'Linux'
+      shell: bash
+      run: docker image prune -f --filter "until=72h"
+
+    - name: Clean up old images (Windows/WSL2)
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        $wsl = $env:WSL_WORKSPACE
+        wsl -d Ubuntu -- bash -c "cd '$wsl' && sudo docker image prune -f --filter 'until=72h'"
+
+    - name: dotenvrtdb runner keepalive
+      shell: bash
+      run: |
+        dotenvrtdb -e .env -- dotenvrtdb runner set-stoprunnerid
+        dotenvrtdb -e .env -- dotenvrtdb runner keepalive
+
+    # ── Step 7: Collect artifacts (always) ────────────────────
+    - name: Collect docker runtime artifacts (Linux)
+      if: always() && runner.os == 'Linux'
+      shell: bash
+      run: bash .github/scripts/collect-artifacts.sh
+
+    - name: Collect docker runtime artifacts (Windows/WSL2)
+      if: always() && runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        $wsl = $env:WSL_WORKSPACE
+        if (-not $wsl) { Write-Host "WSL_WORKSPACE not set, skipping"; exit 0 }
+        wsl -d Ubuntu -- bash -c "cd '$wsl' && bash .github/scripts/collect-artifacts.sh"
+
+    - name: Upload docker runtime artifacts
+      if: always()
+      uses: actions/upload-artifact@v6
+      with:
+        name: docker-runtime
+        path: artifacts/docker-runtime
+        if-no-files-found: warn
+        retention-days: 7

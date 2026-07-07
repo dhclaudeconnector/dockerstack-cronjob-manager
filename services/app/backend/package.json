@@ -1,0 +1,38 @@
+{
+  "name": "cronjob-manager",
+  "version": "1.0.0",
+  "description": "Cronjob.org Multi-Account Manager + Executor (Node.js + Firebase RTDB)",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsup",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "test:unit": "vitest run test/unit",
+    "test:integration": "vitest run test/integration/api.test.ts",
+    "test:smoke": "vitest run test/integration/smoke.test.ts",
+    "emulator:smoke": "RTDB_MODE=memory API_SECRET=test-secret CRONJOB_API_BASE=http://127.0.0.1:0 vitest run test/integration/smoke.test.ts",
+    "ci": "npm run typecheck && npm run test && npm run build"
+  },
+  "dependencies": {
+    "fastify": "^4.28.1",
+    "@fastify/cors": "^9.0.1",
+    "pino": "^9.3.2",
+    "pino-pretty": "^11.2.2",
+    "zod": "^3.23.8",
+    "nanoid": "^5.0.7",
+    "undici": "^6.19.8"
+  },
+  "devDependencies": {
+    "@types/node": "^22.5.0",
+    "tsup": "^8.2.4",
+    "tsx": "^4.17.0",
+    "typescript": "^5.5.4",
+    "vitest": "^2.0.5",
+    "@vitest/coverage-v8": "^2.0.5"
+  }
+}

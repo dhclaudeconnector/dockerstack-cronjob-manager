@@ -1,0 +1,13 @@
+# Loại các file không cần trong build context → context nhỏ, build nhanh,
+# và tránh phá cache layer COPY khi các file này thay đổi.
+**/node_modules/
+**/dist/
+**/.next/
+**/coverage/
+npm-debug.log
+.env
+.env.*
+*.log
+.DS_Store
+# Test/spec không cần cho runtime image (build stage vẫn build từ src).
+backend/test/
