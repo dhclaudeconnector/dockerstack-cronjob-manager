@@ -7,6 +7,8 @@ import { JobsService } from "./cronjob/jobsService.js";
 import { HandlerRegistry } from "./executor/registry.js";
 import { Runner, FnRegistry } from "./executor/runner.js";
 import { QueueConsumer } from "./executor/queue.js";
+import { TaskRepo } from "./lib/taskRepo.js";
+import { AppLogRepo } from "./lib/appLog.js";
 import { RESOURCE_TYPES, type ResourceUrlType } from "./types.js";
 
 /** Dependency container built once at boot and shared across routes. */
@@ -25,6 +27,8 @@ export interface Container {
   fnRegistry: FnRegistry;
   runner: Runner;
   queue: QueueConsumer;
+  tasks: TaskRepo;
+  appLog: AppLogRepo;
 }
 
 export function buildContainer(config: AppConfig, logger: Logger, rtdbOverride?: RtdbClient): Container {
@@ -53,5 +57,8 @@ export function buildContainer(config: AppConfig, logger: Logger, rtdbOverride?:
   const runner = new Runner(registry, fnRegistry, rtdb, config, logger);
   const queue = new QueueConsumer(rtdb, runner, config.rtdbExecQueuePath, logger);
 
-  return { config, logger, rtdb, resources, taxonomy, jobs, registry, fnRegistry, runner, queue };
+  const tasks = new TaskRepo(rtdb);
+  const appLog = new AppLogRepo(rtdb, logger);
+
+  return { config, logger, rtdb, resources, taxonomy, jobs, registry, fnRegistry, runner, queue, tasks, appLog };
 }

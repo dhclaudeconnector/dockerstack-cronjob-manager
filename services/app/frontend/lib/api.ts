@@ -94,6 +94,86 @@ export interface HandlerInfo {
   fns: string[];
 }
 
+// ─── Provider types ───────────────────────────────────────────────
+
+export interface GithubRepo {
+  id: number;
+  name: string;
+  fullName: string;
+  owner: string;
+  private: boolean;
+  defaultBranch: string;
+}
+
+export interface GithubWorkflow {
+  id: number;
+  name: string;
+  path: string;
+  fileName: string;
+  state: string;
+}
+
+export interface GithubBranch {
+  name: string;
+}
+
+export interface AzureProject {
+  id: string;
+  name: string;
+}
+
+export interface AzurePipeline {
+  id: number;
+  name: string;
+  folder?: string;
+}
+
+// ─── Task tracker types ──────────────────────────────────────────
+
+export type TaskKind = "task" | "bug" | "improvement";
+export type TaskPriority = "low" | "medium" | "high";
+export type TaskStatus = "todo" | "in_progress" | "done";
+
+export interface TaskItem {
+  id: string;
+  title: string;
+  detail?: string;
+  kind: TaskKind;
+  priority: TaskPriority;
+  status: TaskStatus;
+  tags: string[];
+  createdAt: number;
+  updatedAt: number;
+}
+
+// ─── App Log types ───────────────────────────────────────────────
+
+export type AppLogScope = "backend" | "frontend" | "provider";
+export type AppLogLevel = "debug" | "info" | "warn" | "error";
+export type AppLogProvider = "cronjob" | "github" | "azure" | "none";
+
+export interface AppLogEntry {
+  id: string;
+  timestamp: number;
+  scope: AppLogScope;
+  level: AppLogLevel;
+  provider?: AppLogProvider;
+  action: string;
+  message: string;
+  context?: Record<string, unknown>;
+  location?: string;
+  reqId?: string;
+}
+
+// ─── Curl export ─────────────────────────────────────────────────
+
+export interface CurlResult {
+  masked: string;
+  unmasked: string;
+}
+
+// ─── API client ──────────────────────────────────────────────────
+
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const res = await fetch(`/proxy/${path.replace(/^\/+/, "")}`, {
     ...init,

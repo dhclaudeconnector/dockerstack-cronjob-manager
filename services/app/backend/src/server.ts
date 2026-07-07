@@ -6,6 +6,10 @@ import { registerResourceRoutes } from "./routes/resources.js";
 import { registerTaxonomyRoutes } from "./routes/taxonomy.js";
 import { registerJobRoutes } from "./routes/jobs.js";
 import { registerExecRoutes } from "./routes/exec.js";
+import { registerProviderRoutes } from "./routes/providers.js";
+import { registerCurlRoutes } from "./routes/curl.js";
+import { registerTaskRoutes } from "./routes/tasks.js";
+import { registerAppLogRoutes } from "./routes/appLogs.js";
 import type { JobLogEntry, ExecLog } from "./types.js";
 
 /**
@@ -22,7 +26,7 @@ export function buildServer(c: Container): App {
 
   void app.register(cors, { origin: true });
 
-  // Global error handler — log all unhandled route errors to file
+  // Global error handler — log all unhandled route errors to file + appLog
   app.setErrorHandler((err, req, reply) => {
     req.log.error({
       err,
@@ -31,10 +35,20 @@ export function buildServer(c: Container): App {
       url: req.url,
       body: req.body,
     }, "unhandled route error");
+    // Also write to appLog for the Logs UI
+    c.appLog.write({
+      scope: "backend",
+      level: "error",
+      action: "route.error",
+      message: `${req.method} ${req.url}: ${err.message}`,
+      context: { statusCode: err.statusCode, method: req.method, url: req.url },
+      location: "server.ts:errorHandler",
+      reqId: req.id,
+    }).catch(() => {});
     reply.code(err.statusCode && err.statusCode >= 400 ? err.statusCode : 500).send({ error: err.message });
   });
 
-  // Log every completed request
+  // Log every completed request to appLog (info level, limited fields)
   app.addHook("onResponse", (req, reply, done) => {
     req.log.info({
       reqId: req.id,
@@ -43,6 +57,18 @@ export function buildServer(c: Container): App {
       statusCode: reply.statusCode,
       responseTime: Math.round(reply.elapsedTime),
     }, "request completed");
+    // Write to appLog only for errors or slow requests to avoid noise
+    if (reply.statusCode >= 400 || reply.elapsedTime > 5000) {
+      c.appLog.write({
+        scope: "backend",
+        level: reply.statusCode >= 500 ? "error" : reply.statusCode >= 400 ? "warn" : "info",
+        action: "request",
+        message: `${req.method} ${req.url} → ${reply.statusCode} (${Math.round(reply.elapsedTime)}ms)`,
+        context: { statusCode: reply.statusCode, responseTime: Math.round(reply.elapsedTime) },
+        location: "server.ts:onResponse",
+        reqId: req.id,
+      }).catch(() => {});
+    }
     done();
   });
 
@@ -62,10 +88,15 @@ export function buildServer(c: Container): App {
     time: Date.now(),
   }));
 
+  // Register all route groups
   registerResourceRoutes(app, c);
   registerTaxonomyRoutes(app, c);
   registerJobRoutes(app, c);
   registerExecRoutes(app, c);
+  registerProviderRoutes(app, c);
+  registerCurlRoutes(app, c);
+  registerTaskRoutes(app, c);
+  registerAppLogRoutes(app, c);
 
   // Aggregate logs endpoints for the Logs UI.
   app.get<{ Querystring: { jobId?: string } }>("/api/logs/jobs", async (req) => {

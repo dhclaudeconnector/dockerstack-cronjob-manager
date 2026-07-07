@@ -209,7 +209,6 @@ function Modal({ title, children, onClose }: { title: string; children: React.Re
   return (
     <div
       className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"
-      onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div className="bg-surface-container-lowest border border-outline-variant/20 rounded-xl shadow-xl w-full max-w-md">
         <div className="flex justify-between items-center px-4 py-3 border-b border-outline-variant/20">
